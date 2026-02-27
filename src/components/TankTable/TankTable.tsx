@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { fetchTanks } from '../../api/tanksApi'
 import type { Tank } from '../../types/tank'
 import { normalizeText } from '../../utils/normalizeText'
@@ -17,14 +17,23 @@ function getErrorMessage(error: unknown): string {
   return 'Не удалось загрузить список танков'
 }
 
+function normalizePageSizeOptions(pageSizeOptions: number[]): number[] {
+  const uniq = Array.from(new Set(pageSizeOptions.filter((value) => value > 0)))
+  return uniq.length > 0 ? uniq.sort((a, b) => a - b) : DEFAULT_PAGE_SIZE_OPTIONS
+}
+
+function toSecureImageUrl(imageUrl: string): string {
+  return imageUrl.replace(/^http:\/\//, 'https://')
+}
+
 export default function TankTable({
   pageSizeOptions = DEFAULT_PAGE_SIZE_OPTIONS,
   initialPageSize,
 }: TankTableProps) {
-  const normalizedPageSizeOptions = useMemo(() => {
-    const uniq = Array.from(new Set(pageSizeOptions.filter((n) => n > 0)))
-    return uniq.length ? uniq.sort((a, b) => a - b) : DEFAULT_PAGE_SIZE_OPTIONS
-  }, [pageSizeOptions])
+  const normalizedPageSizeOptions = useMemo(
+    () => normalizePageSizeOptions(pageSizeOptions),
+    [pageSizeOptions],
+  )
 
   const [tanks, setTanks] = useState<Tank[]>([])
   const [isLoading, setIsLoading] = useState(true)
@@ -39,26 +48,32 @@ export default function TankTable({
   )
 
   useEffect(() => {
-    const abortController = new AbortController()
-
-    const load = async () => {
-      setIsLoading(true)
-      setErrorMessage(null)
-      try {
-        const loaded = await fetchTanks(abortController.signal)
-        setTanks(loaded)
-      } catch (error) {
-        if (error instanceof DOMException && error.name === 'AbortError') return
-        setErrorMessage(getErrorMessage(error))
-      } finally {
-        setIsLoading(false)
-      }
+    if (!normalizedPageSizeOptions.includes(pageSize)) {
+      setPageSize(normalizedPageSizeOptions[0])
+      setPage(1)
     }
+  }, [normalizedPageSizeOptions, pageSize])
 
-    void load()
+  const loadTanks = useCallback(async (signal?: AbortSignal) => {
+    setIsLoading(true)
+    setErrorMessage(null)
 
-    return () => abortController.abort()
+    try {
+      const loaded = await fetchTanks(signal)
+      setTanks(loaded)
+    } catch (error) {
+      if (error instanceof DOMException && error.name === 'AbortError') return
+      setErrorMessage(getErrorMessage(error))
+    } finally {
+      setIsLoading(false)
+    }
   }, [])
+
+  useEffect(() => {
+    const controller = new AbortController()
+    void loadTanks(controller.signal)
+    return () => controller.abort()
+  }, [loadTanks])
 
   const filteredTanks = useMemo(() => {
     const q = normalizeText(searchValue)
@@ -71,11 +86,24 @@ export default function TankTable({
     })
   }, [searchValue, tanks])
 
+  const totalPages = Math.max(1, Math.ceil(filteredTanks.length / pageSize))
+
+  useEffect(() => {
+    if (page > totalPages) {
+      setPage(totalPages)
+    }
+  }, [page, totalPages])
+
+  const pagedTanks = useMemo(() => {
+    const from = (page - 1) * pageSize
+    return filteredTanks.slice(from, from + pageSize)
+  }, [filteredTanks, page, pageSize])
+
   return (
     <section>
       <h1>Энциклопедия танков</h1>
 
-      <div style={{ display: 'flex', gap: 12, marginBottom: 12 }}>
+      <div style={{ display: 'flex', gap: 12, marginBottom: 12, flexWrap: 'wrap' }}>
         <label>
           Поиск:
           <input
@@ -110,11 +138,86 @@ export default function TankTable({
 
       <p>Всего: {tanks.length}</p>
       <p>Найдено: {filteredTanks.length}</p>
-      <p>Текущая страница: {page}</p>
 
-      {isLoading && <p>Загрузка данных...</p>}
-      {errorMessage && <p role="alert">{errorMessage}</p>}
-      {!isLoading && !errorMessage && filteredTanks.length === 0 && <p>Ничего не найдено</p>}
+      {errorMessage && (
+        <div role="alert">
+          <p>{errorMessage}</p>
+          <button onClick={() => void loadTanks()}>Повторить загрузку</button>
+        </div>
+      )}
+
+      {!errorMessage && isLoading && <p>Загрузка данных...</p>}
+
+      {!errorMessage && !isLoading && filteredTanks.length === 0 && <p>Ничего не найдено</p>}
+
+      {!errorMessage && !isLoading && filteredTanks.length > 0 && (
+        <>
+          <div style={{ overflowX: 'auto' }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 760 }}>
+              <thead>
+                <tr>
+                  <th>Иконка</th>
+                  <th>Название</th>
+                  <th>Нация</th>
+                  <th>Тип</th>
+                  <th>Уровень</th>
+                  <th>Статус</th>
+                </tr>
+              </thead>
+              <tbody>
+                {pagedTanks.map((tank) => (
+                  <tr key={tank.tank_id}>
+                    <td>
+                      <img
+                        src={toSecureImageUrl(tank.images.small_icon)}
+                        alt={tank.name}
+                        loading="lazy"
+                        width={96}
+                      />
+                    </td>
+                    <td>
+                      <strong>{tank.name}</strong>
+                      <div>{tank.short_name}</div>
+                    </td>
+                    <td>{tank.nation}</td>
+                    <td>{tank.type}</td>
+                    <td>{tank.tier}</td>
+                    <td>{tank.is_premium || tank.is_gift ? 'Премиум' : 'Обычный'}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+
+          <nav aria-label="Пагинация" style={{ display: 'flex', gap: 8, marginTop: 12, flexWrap: 'wrap' }}>
+            <button type="button" onClick={() => setPage(1)} disabled={page === 1}>
+              В начало
+            </button>
+            <button
+              type="button"
+              onClick={() => setPage((prev) => Math.max(1, prev - 1))}
+              disabled={page === 1}
+            >
+              Предыдущая
+            </button>
+
+            <span>
+              Страница {page} из {totalPages}
+            </span>
+
+            <button
+              type="button"
+              onClick={() => setPage((prev) => Math.min(totalPages, prev + 1))}
+              disabled={page === totalPages}
+            >
+              Следующая
+            </button>
+            <button type="button" onClick={() => setPage(totalPages)} disabled={page === totalPages}>
+              В конец
+            </button>
+          </nav>
+        </>
+      )}
     </section>
   )
 }
