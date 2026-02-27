@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { fetchTanks } from '../../api/tanksApi'
 import type { Tank } from '../../types/tank'
 import { normalizeText } from '../../utils/normalizeText'
+import './TankTable.scss'
 
 const DEFAULT_PAGE_SIZE_OPTIONS = [10, 25, 50]
 
@@ -11,9 +12,7 @@ export interface TankTableProps {
 }
 
 function getErrorMessage(error: unknown): string {
-  if (error instanceof Error) {
-    return error.message
-  }
+  if (error instanceof Error) return error.message
   return 'Не удалось загрузить список танков'
 }
 
@@ -38,7 +37,6 @@ export default function TankTable({
   const [tanks, setTanks] = useState<Tank[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [errorMessage, setErrorMessage] = useState<string | null>(null)
-
   const [searchValue, setSearchValue] = useState('')
   const [page, setPage] = useState(1)
   const [pageSize, setPageSize] = useState(
@@ -89,9 +87,7 @@ export default function TankTable({
   const totalPages = Math.max(1, Math.ceil(filteredTanks.length / pageSize))
 
   useEffect(() => {
-    if (page > totalPages) {
-      setPage(totalPages)
-    }
+    if (page > totalPages) setPage(totalPages)
   }, [page, totalPages])
 
   const pagedTanks = useMemo(() => {
@@ -100,13 +96,26 @@ export default function TankTable({
   }, [filteredTanks, page, pageSize])
 
   return (
-    <section>
-      <h1>Энциклопедия танков</h1>
+    <section className="tank-table" aria-labelledby="tank-table-title">
+      <header className="tank-table__header">
+        <div>
+          <h1 id="tank-table-title" className="tank-table__title">
+            Энциклопедия танков
+          </h1>
+          <p className="tank-table__subtitle">Официальный список техники из Tanki API</p>
+        </div>
 
-      <div style={{ display: 'flex', gap: 12, marginBottom: 12, flexWrap: 'wrap' }}>
-        <label>
-          Поиск:
+        <div className="tank-table__stats">
+          <span>Всего: {tanks.length}</span>
+          <span>Найдено: {filteredTanks.length}</span>
+        </div>
+      </header>
+
+      <div className="tank-table__controls">
+        <label className="tank-table__control">
+          <span className="tank-table__label">Поиск по названию</span>
           <input
+            className="tank-table__input"
             aria-label="Фильтр по названию"
             value={searchValue}
             onChange={(e) => {
@@ -117,9 +126,10 @@ export default function TankTable({
           />
         </label>
 
-        <label>
-          Танков на странице:
+        <label className="tank-table__control tank-table__control--small">
+          <span className="tank-table__label">Танков на странице</span>
           <select
+            className="tank-table__select"
             aria-label="Танков на странице"
             value={pageSize}
             onChange={(e) => {
@@ -136,24 +146,25 @@ export default function TankTable({
         </label>
       </div>
 
-      <p>Всего: {tanks.length}</p>
-      <p>Найдено: {filteredTanks.length}</p>
-
       {errorMessage && (
-        <div role="alert">
+        <div className="tank-table__message tank-table__message--error" role="alert">
           <p>{errorMessage}</p>
-          <button onClick={() => void loadTanks()}>Повторить загрузку</button>
+          <button className="tank-table__retry" onClick={() => void loadTanks()}>
+            Повторить загрузку
+          </button>
         </div>
       )}
 
-      {!errorMessage && isLoading && <p>Загрузка данных...</p>}
+      {!errorMessage && isLoading && <div className="tank-table__message">Загрузка данных...</div>}
 
-      {!errorMessage && !isLoading && filteredTanks.length === 0 && <p>Ничего не найдено</p>}
+      {!errorMessage && !isLoading && filteredTanks.length === 0 && (
+        <div className="tank-table__message">Танки с таким названием не найдены.</div>
+      )}
 
       {!errorMessage && !isLoading && filteredTanks.length > 0 && (
         <>
-          <div style={{ overflowX: 'auto' }}>
-            <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 760 }}>
+          <div className="tank-table__table-wrapper">
+            <table className="tank-table__table">
               <thead>
                 <tr>
                   <th>Иконка</th>
@@ -169,50 +180,70 @@ export default function TankTable({
                   <tr key={tank.tank_id}>
                     <td>
                       <img
+                        className="tank-table__icon"
                         src={toSecureImageUrl(tank.images.small_icon)}
                         alt={tank.name}
                         loading="lazy"
-                        width={96}
                       />
                     </td>
                     <td>
-                      <strong>{tank.name}</strong>
-                      <div>{tank.short_name}</div>
+                      <span className="tank-table__name">{tank.name}</span>
+                      <span className="tank-table__short-name">{tank.short_name}</span>
                     </td>
                     <td>{tank.nation}</td>
                     <td>{tank.type}</td>
                     <td>{tank.tier}</td>
-                    <td>{tank.is_premium || tank.is_gift ? 'Премиум' : 'Обычный'}</td>
+                    <td>
+                      {tank.is_premium || tank.is_gift ? (
+                        <span className="tank-table__badge">Премиум</span>
+                      ) : (
+                        <span className="tank-table__badge tank-table__badge--neutral">Обычный</span>
+                      )}
+                    </td>
                   </tr>
                 ))}
               </tbody>
             </table>
           </div>
 
-          <nav aria-label="Пагинация" style={{ display: 'flex', gap: 8, marginTop: 12, flexWrap: 'wrap' }}>
-            <button type="button" onClick={() => setPage(1)} disabled={page === 1}>
+          <nav className="tank-table__pagination" aria-label="Пагинация">
+            <button
+              className="tank-table__pagination-button"
+              type="button"
+              onClick={() => setPage(1)}
+              disabled={page === 1}
+            >
               В начало
             </button>
+
             <button
+              className="tank-table__pagination-button"
               type="button"
               onClick={() => setPage((prev) => Math.max(1, prev - 1))}
               disabled={page === 1}
             >
-              Предыдущая
+              Предыдущая страница
             </button>
 
-            <span>
+            <span className="tank-table__pagination-info">
               Страница {page} из {totalPages}
             </span>
 
             <button
+              className="tank-table__pagination-button"
               type="button"
               onClick={() => setPage((prev) => Math.min(totalPages, prev + 1))}
               disabled={page === totalPages}
             >
-              Следующая
+              Следующая страница
             </button>
-            <button type="button" onClick={() => setPage(totalPages)} disabled={page === totalPages}>
+
+            <button
+              className="tank-table__pagination-button"
+              type="button"
+              onClick={() => setPage(totalPages)}
+              disabled={page === totalPages}
+            >
               В конец
             </button>
           </nav>
