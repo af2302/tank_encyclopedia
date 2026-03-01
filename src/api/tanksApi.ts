@@ -32,13 +32,13 @@ export async function fetchTanks(signal?: AbortSignal): Promise<Tank[]> {
     const response = await fetch(`${TANK_API_ENDPOINT}?${searchParams.toString()}`, { signal })
 
     if (!response.ok) {
-        throw new Error(`Failed to fetch tanks: ${response.status}`)
+        throw new Error(`Ошибка сети (${response.status})`)
     }
 
     const payload = await response.json() as TankApiResponse
 
     if (payload.status !== 'ok') {
-        throw new Error(payload.error?.message ?? 'Api error while fetching tanks')
+        throw new Error(payload.error?.message ?? 'API вернул ошибку')
     }
 
     return Object.values(payload.data).sort(compareTanks)
